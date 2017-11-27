@@ -5,7 +5,7 @@ module MachineChair
     class Article < MachineChair::Models::Base
       attr_accessor :id, :name
 
-      def initialize(id, name)
+      def initialize(id, name = nil)
         @id = id
         @name = name
       end
