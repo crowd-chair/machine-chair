@@ -1,16 +1,13 @@
-require "machine_chair/models/group"
-
 module MachineChair
   class Algorithm
-    EPSILON = 10e-8
-
     class << self
+      EPSILON = 10e-8
 
       def propose(state, alpha: 0.5, beta: 0.5)
         groups = []
         while state.is_continued? do
-          sessions = sieve(state, alpha: alpha)
-          group = select(state, sessions, beta: beta)
+          sessions = sieve(state, alpha)
+          group = select(state, sessions, beta)
 
           if group
             state = state.update_group(group)
@@ -19,13 +16,13 @@ module MachineChair
             state = state.update_sessions(sessions)
           end
         end
-        groups, state
+        return groups, state
       end
 
       # Sieve sessions with alpha param
-      def sieve(state, alpha: 0.5)
+      def sieve(state, alpha)
         sieve_scores = state.sessions.map{ |session|
-          sieve_score(state, session, alpha: alpha)
+          sieve_score(state, session, alpha)
         }
         max_sieve_score = sieve_scores.max
 
@@ -35,18 +32,18 @@ module MachineChair
       end
 
       # Select group in sieved sessions with beta param
-      def select(state, sieves, beta: 0.5)
+      def select(state, sieves, beta)
         state.frame.max.downto(state.frame.min).each { |slot|
           next unless state.frame.available? slot
           createbles = sieves.select { |session|
-            find_articles(state, session).size >= slot
+            state.find_articles(session).size >= slot
           }
           next if createbles.empty?
 
           return createbles.map { |session|
-            create_group(state, session, slot, beta: beta)
+            create_group(state, session, slot, beta)
           }.max_by{ |group|
-            group_score(state, group, beta: beta)
+            group_score(state, group, beta)
           }
         }
         nil
@@ -54,8 +51,10 @@ module MachineChair
 
       private
 
-      def sieve_score(state, session, alpha: alpha)
-        articles = find_articles(state, session)
+      def sieve_score(state, session, alpha)
+        articles = state.find_articles(session)
+        return 0.0 if articles.nil? || articles.empty?
+
         difficulty = articles.map { |article|
           state.difficulty(article)
         }.max
@@ -64,25 +63,25 @@ module MachineChair
         difficulty * alpha + priority * (1.0 - alpha)
       end
 
-      def bidding_score(state, session, article, beta: beta)
-        bidding = MachineChair::Models::Bidding.new(session, article)
+      def bidding_score(state, session, article, beta)
+        bidding = MachineChair::Models::Bidding.new(article, session)
         quality = state.quality(bidding)
         difficulty = state.difficulty(article)
 
         difficulty * beta + quality * (1.0 - beta)
       end
 
-      def create_group(state, session, slot, beta: beta)
-        find_articles(state, session).sort_by{ |article|
-          bidding_score(state, session, article, beta: beta)
+      def create_group(state, session, slot, beta)
+        articles = state.find_articles(session).sort_by{ |article|
+          bidding_score(state, session, article, beta)
         }.reverse[0...slot]
 
         MachineChair::Models::Group.new(session, articles)
       end
 
-      def group_score(state, group, beta: beta)
-        group.articles.inject{ |total, article|
-          total + bidding_score(state, session, article, beta: beta)
+      def group_score(state, group, beta)
+        group.articles.inject(0) { |total, article|
+          total + bidding_score(state, group.session, article, beta)
         } / group.slot.to_f
       end
 

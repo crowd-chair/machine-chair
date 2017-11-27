@@ -7,7 +7,7 @@ module MachineChair
 
       DEFAULT_STRENGTH = 0.5
 
-      def initialize(article, session, tie_strength: 0.5)
+      def initialize(article, session, tie_strength = 0.5)
         @article = article
         @session = session
         @tie_strength = tie_strength
@@ -18,7 +18,7 @@ module MachineChair
       end
 
       def hash
-        "#{@article.hash-@session.hash}".hash
+        "#{@article.hash}-#{@session.hash}".hash
       end
 
     end

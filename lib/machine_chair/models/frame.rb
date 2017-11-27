@@ -16,20 +16,20 @@ module MachineChair
 
       def max
         @state.keys.sort{|a, b| b <=> a }.each do |slot|
-          return slot if self.available slot
+          return slot if self.available? slot
         end
         return 0
       end
 
       def min
         @state.keys.sort{|a, b| a <=> b }.each do |slot|
-          return slot if self.available slot
+          return slot if self.available? slot
         end
         return 0
       end
 
       def put(slot)
-        raise unless self.available slot
+        raise unless self.available? slot
 
         @next_state = @state.clone
         @next_state[slot] = @next_state[slot] - 1

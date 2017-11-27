@@ -8,15 +8,20 @@ module MachineChair
       @biddings = biddings
       @frame = frame
 
-      caches_update
+      @bidding_caches = update_bidding_cache
+      @score_caches = {
+        difficulty: update_normalized_difficulty_cache,
+        quality: update_normalized_quality_cache,
+        priority: update_normalized_priority_cache
+      }
     end
 
     def find_articles(session)
-      @bidding_cache[:to_articles][session.hash]
+      @bidding_caches[:to_articles][session.hash]
     end
 
     def find_sessions(article)
-      @bidding_cache[:to_sessions][article.hash]
+      @bidding_caches[:to_sessions][article.hash]
     end
 
     def difficulty(article)
@@ -27,20 +32,17 @@ module MachineChair
       @score_caches[:priority][session.hash]
     end
 
-    def quality(session, article)
+    def quality(bidding)
       @score_caches[:quality][bidding.hash]
     end
 
     def update_sessions(sessions)
-      next_sessions -= sessions
-      next_biddings -= sessions.map { |session|
-        articles = @bidding_caches[:to_articles][session.hash]
-        biddings = articles.map { |article|
-          MachineChair::Models::Bidding(session, article)
-        }
+      next_sessions = @sessions - sessions
+      next_biddings = @biddings - @biddings.select { |bidding|
+        sessions.include? bidding.session
       }.flatten
 
-      MachineChair::Models::State.new(
+      MachineChair::State.new(
         next_sessions,
         @articles,
         next_biddings,
@@ -49,16 +51,15 @@ module MachineChair
     end
 
     def update_group(group)
-      next_articles -= group.articles
-      next_biddings -= group.articles.map { |article|
-        session = group.session
-        MachineChair::Models::Bidding(session, article)
+      next_articles = @articles - group.articles
+      next_biddings = @biddings - @biddings.select { |bidding|
+        group.articles.include? bidding.article
       }
       next_frame = @frame.put group.slot
 
-      MachineChair::Models::State.new(
+      MachineChair::State.new(
         @sessions,
-        next_arti,
+        next_articles,
         next_biddings,
         next_frame
       )
@@ -74,21 +75,17 @@ module MachineChair
 
     private
 
-    def caches_update
-      @bidding_caches = update_bidding_cache
-      @score_caches = {
-        difficulty: update_normalized_difficulty_cache
-        quality: update_normalized_quality_cache
-        priority: update_normalized_priority_cache
-      }
-    end
-
     def calc_difficulty(article)
       sessions = @bidding_caches[:to_sessions][article.hash]
       articles = sessions.map { |session|
         @bidding_caches[:to_articles][session.hash]
       }.flatten.uniq
-      articles.empty? 0.0 : 1.0 / (articles.size.to_f)
+
+      if articles.empty?
+        0.0
+      else
+        1.0 / articles.size.to_f
+      end
     end
 
     def calc_priority(session)
