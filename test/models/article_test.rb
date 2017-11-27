@@ -17,4 +17,19 @@ class ArticleTest < Minitest::Test
     assert MachineChair::Models::Article.new(1).hash == article1.hash
     assert MachineChair::Models::Article.new(1).hash != article2.hash
   end
+
+  def test_sub_objects
+    ids = [1,2,3,4,5]
+    articles = ids.map{ |id|
+      MachineChair::Models::Article.new(id)
+    }
+
+    sub_ids = [3,4,5]
+    sub_articles = sub_ids.map{ |id|
+      MachineChair::Models::Article.new(id)
+    }
+
+    articles = articles - sub_articles
+    assert_equal 2, articles.size
+  end
 end
