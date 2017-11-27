@@ -1,0 +1,6 @@
+require "machine_chair/models/article"
+require "machine_chair/models/base"
+require "machine_chair/models/bidding"
+require "machine_chair/models/frame"
+require "machine_chair/models/group"
+require "machine_chair/models/session"
