@@ -17,11 +17,11 @@ module MachineChair
     end
 
     def find_articles(session)
-      @bidding_caches[:to_articles][session.hash]
+      @bidding_caches[:to_articles][session.hash] || []
     end
 
     def find_sessions(article)
-      @bidding_caches[:to_sessions][article.hash]
+      @bidding_caches[:to_sessions][article.hash] || []
     end
 
     def difficulty(article)
@@ -51,6 +51,8 @@ module MachineChair
     end
 
     def update_group(group)
+      group.session.down_priority!
+
       next_articles = @articles - group.articles
       next_biddings = @biddings - @biddings.select { |bidding|
         group.articles.include? bidding.article
@@ -77,19 +79,16 @@ module MachineChair
 
     def calc_difficulty(article)
       sessions = @bidding_caches[:to_sessions][article.hash]
+      return 0.0 if sessions.nil? || sessions.empty?
+
       articles = sessions.map { |session|
         @bidding_caches[:to_articles][session.hash]
       }.flatten.uniq
-
-      if articles.empty?
-        0.0
-      else
-        1.0 / articles.size.to_f
-      end
+      return  1.0 / articles.size.to_f
     end
 
     def calc_priority(session)
-      session.priority.to_f.abs
+      session.priority.abs.to_f
     end
 
     def calc_quality(bidding)

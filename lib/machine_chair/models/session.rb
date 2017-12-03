@@ -11,7 +11,7 @@ module MachineChair
         @priority = -1
       end
 
-      def down_priority
+      def down_priority!
         @priority = @priority - 1
       end
 
