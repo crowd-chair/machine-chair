@@ -1,7 +1,7 @@
 module MachineChair
   module Modules
     module Base
-      attr_accessor :id, :name
+      attr_reader :id, :name
 
       def ==(other)
         @id == other.id
@@ -22,6 +22,15 @@ module MachineChair
 
     module SessionName
       include Base
+      attr_accessor :priority
+
+      def set_priority
+        @priority = 0
+      end
+
+      def down_priority
+        @priority -= 1
+      end
     end
 
     module Keyword
@@ -29,7 +38,7 @@ module MachineChair
     end
 
     module KeywordRelation
-      attr_accessor :article, :keyword
+      attr_reader :article, :keyword
 
       def ==(other)
         @article == other.article && @keyword == other.keyword
@@ -45,7 +54,7 @@ module MachineChair
     end
 
     module Bidding
-      attr_accessor :article, :session_name, :weight
+      attr_reader :article, :session_name, :weight
 
       def ==(other)
         @article == other.article && @session_name == other.session_name
@@ -85,17 +94,25 @@ module MachineChair
         0
       end
 
-      def update!(session_group)
+      def update(session_group)
         raise "No Available Frame" unless available? session_group.slot
         @frames[session_group.slot] -= 1
       end
     end
 
     module SessionGroup
-      attr_accessor :session_name, :articles
+      attr_reader :session_name, :articles, :score
 
       def slot
         articles.size
+      end
+
+      def group_score(param)
+        @score.calc(param)
+      end
+
+      def group_point(param)
+        @score.priority + @score.quality
       end
     end
   end
