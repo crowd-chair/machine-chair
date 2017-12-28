@@ -1,5 +1,6 @@
 module MachineChair
   class State
+    using MachineChair::ArrayExtensions
     attr_reader :session_names, :articles, :biddings, :session_frame
 
     def initialize(session_names: [], articles: [], biddings: [], frames: {})
