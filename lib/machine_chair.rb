@@ -1,3 +1,4 @@
+require 'matrix'
 require "machine_chair/utils"
 require "machine_chair/modules"
 require "machine_chair/models"

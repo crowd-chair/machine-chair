@@ -35,10 +35,18 @@ module MachineChair
       def find_best_group(state, candidates, param)
         _max = state.session_frame.max
         _min = state.session_frame.min
-        _min.upto(_max).each{ |slot|
+        _max.downto(_min).each{ |slot|
           best_group = candidates.map{ |c|
             group = find_best_group_of_session_name(state, c, slot, param)
           }.compact.max_by{|g| g.group_score(param)}
+
+          if best_group
+            puts "---BestGroup---"
+            puts "Session Name: #{best_group.session_name.name}"
+            puts "Article Size: #{best_group.articles.size}"
+            puts "From Article Size: #{state.find_articles(best_group.session_name).size}"
+          end
+
           return best_group if best_group
         }
         nil
@@ -49,23 +57,18 @@ module MachineChair
       def find_best_group_of_session_name(state, session_name, slot, param)
         articles = state.find_articles(session_name)
         return nil if articles.size < slot
-        # best_group = articles.combination(slot).map{ |a|
-        #   score = state.calc_group_score(session_name, a)
-        #   MachineChair::Models::SessionGroup.new(session_name, a, score: score)
-        # }.max_by{|g| g.group_score(param)}
 
-        # 正解データの近似
-        scores = Hash[*[articles, articles.map{|a| state.calc_score(session_name, a)}].transpose.flatten]
-        best_group_articles = articles.sort_by{|a| -1.0 * scores[a].calc(param)}[0...slot]
-        group_score = state.calc_group_score(session_name, best_group_articles)
-        best_group = MachineChair::Models::SessionGroup.new(session_name, best_group_articles, score: group_score)
+        # [TODO] 高速化させる必要がある
+        best_group = articles.combination(slot).map{ |a|
+          score = state.calc_group_score(session_name, a)
+          MachineChair::Models::SessionGroup.new(session_name, a, score: score)
+        }.max_by{|g| g.group_score(param)}
 
-        if best_group
-          puts "---BestGroup---"
-          puts "Session Name: #{session_name.name}"
-          puts "Article Size: #{best_group.articles.size}"
-          puts "From Article Size: #{articles.size}"
-        end
+        # 近似解
+        # scores = Hash[*[articles, articles.map{|a| state.calc_score(session_name, a)}].transpose.flatten]
+        # best_group_articles = articles.sort_by{|a| -1.0 * scores[a].calc(param)}[0...slot]
+        # group_score = state.calc_group_score(session_name, best_group_articles)
+        # best_group = MachineChair::Models::SessionGroup.new(session_name, best_group_articles, score: group_score)
         best_group
       end
     end

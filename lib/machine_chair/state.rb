@@ -1,21 +1,26 @@
 module MachineChair
   class State
-    using MachineChair::ArrayExtensions
+    using MachineChair::Extensions
     attr_reader :session_names, :articles, :biddings, :session_frame
 
-    def initialize(session_names: [], articles: [], biddings: [], frames: {})
+    def initialize(session_names: [], articles: [], biddings: [], frames: {}, keywords: [], keyword_relations: [])
       @session_names = session_names.dup
       @articles = articles.dup
       @biddings = biddings.dup
+      @keywords = keywords.dup
+      @keyword_relations = keyword_relations.dup
       @session_frame = MachineChair::Models::SessionFrame.new(frames.dup)
 
       @session_names.each{|s| s.set_priority}
       init_cache
+      init_keyword_vector
     end
 
     def init_cache
       @cache = Hash.new
       @cache[:bidding] = init_bidding_cache
+      @cache[:keyword] = init_keyword_cache
+      @cache[:vector] = init_keyword_vector
       @cache[:score] = init_score_cache
     end
 
@@ -58,6 +63,10 @@ module MachineChair
       @cache[:score][:quality][bidding.hash]
     end
 
+    def cos(a1, a2)
+      @cache[:score][:cos][to_cos_hash(a1,a2)]
+    end
+
     def is_continued?
       !is_finished?
     end
@@ -68,7 +77,7 @@ module MachineChair
 
     def calc_group_score(session_name, articles)
       _d = articles.map{|a| difficulty(a)}.sum
-      _q = articles.map{|a| quality(session_name, a)}.sum
+      _q = articles.zip(articles.rotate(1)).map{|a| cos(*a)}.sum
       _p = priority(session_name)
       MachineChair::Models::Score.new(difficulty: _d, quality: _q, priority: _p)
     end
@@ -101,11 +110,58 @@ module MachineChair
       }
     end
 
+    def init_keyword_cache
+      cache_article = Hash.new
+      cache_keyword = Hash.new
+      cache_keyword_relation = Hash.new
+      @keyword_relations.each{|r|
+        cache_keyword_relation[r.hash] = r
+        cache_article[r.keyword.hash] ||= []
+        cache_article[r.keyword.hash] << r.article
+        cache_keyword[r.article.hash] ||= []
+        cache_keyword[r.article.hash] << r.keyword
+      }
+      {
+        relation: cache_keyword_relation,
+        article: cache_article,
+        keyword: cache_keyword
+      }
+    end
+
+    def init_keyword_vector
+      keyword_vector = Hash.new
+      @keywords.each{|k|
+        articles = @cache[:keyword][:article][k.hash]
+        next unless articles
+        list = Hash.new
+        biddings = articles.map{|a|
+          @cache[:bidding][:session_name][a.hash].map{|s|
+            @cache[:bidding][:bidding][MachineChair::Models::Bidding.new(s,a).hash]
+          }
+        }.flatten
+        biddings.each{|b|
+          list[b.session_name.hash] = 0 unless list[b.session_name.hash]
+          list[b.session_name.hash] += b.weight
+        }
+        keyword_vector[k.hash] = Vector[*@session_names.map{|s| list[s.hash] || 0}]
+      }
+      article_vector = Hash.new
+      @articles.each{|a|
+        keywords = @cache[:keyword][:keyword][a.hash]
+        article_vector[a.hash] = keywords.map{|k| keyword_vector[k.hash]}.inject(:+)
+      }
+      {
+        article: article_vector,
+        keyword: keyword_vector
+      }
+    end
+
     def init_score_cache
       {
         difficulty: normalize_difficulty_cache,
         priority: normalize_priority_cache,
-        quality: normalize_quality_cache
+        quality: normalize_quality_cache,
+        cos: cache_all_cos
       }
     end
 
@@ -125,6 +181,30 @@ module MachineChair
 
     def calc_quality(bidding)
       @cache[:bidding][:bidding][bidding.hash].weight
+    end
+
+    # 時間がかかる処理
+    def cache_all_cos
+      cos_cache = Hash.new
+      @session_names.each{|s|
+        as = @cache[:bidding][:article][s.hash]
+        as.product(as).each{|a1, a2|
+          next if a1 == a2
+          next if cos_cache[to_cos_hash(a1, a2)]
+          if cos_cache[to_cos_hash(a2, a1)]
+            cos_cache[to_cos_hash(a1, a2)] = cos_cache[to_cos_hash(a2, a1)]
+            next
+          end
+          v1 = @cache[:vector][:article][a1.hash]
+          v2 = @cache[:vector][:article][a2.hash]
+          cos_cache[to_cos_hash(a1, a2)] = v1.cos(v2)
+        }
+      }
+      cos_cache.normalize
+    end
+
+    def to_cos_hash(a1, a2)
+      [a1.hash, a2.hash].hash
     end
 
     def normalize_difficulty_cache

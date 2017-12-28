@@ -12,6 +12,10 @@ module MachineChair
       def calc(param)
         @difficulty * param.difficulty + @priority * param.priority + @quality * param.quality
       end
+
+      def point
+        @priority + @quality
+      end
     end
   end
 end

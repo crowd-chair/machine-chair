@@ -1,5 +1,6 @@
 require "machine_chair/models/article"
 require "machine_chair/models/bidding"
+require "machine_chair/models/keyword_relation"
 require "machine_chair/models/keyword"
 require "machine_chair/models/parameter"
 require "machine_chair/models/score"

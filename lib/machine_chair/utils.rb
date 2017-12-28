@@ -1,5 +1,5 @@
 module MachineChair
-  module ArrayExtensions
+  module Extensions
     refine Array do
       def sum
         inject(:+)
@@ -23,6 +23,22 @@ module MachineChair
         s = sd
         return self if s == 0
         map { |a| (a - m) / s }
+      end
+    end
+
+    refine Hash do
+      def normalize
+        values = self.values
+        m = values.mean
+        s = values.sd
+        return self if s == 0
+        Hash[self.map{|k, v| [k, (v - m) / s]}]
+      end
+    end
+
+    refine Vector do
+      def cos(vec)
+        self.dot(vec) / (self.norm * vec.norm)
       end
     end
   end
