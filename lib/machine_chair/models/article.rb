@@ -1,7 +1,8 @@
 module MachineChair
   module Models
     class Article
-      include MachineChair::Modules::Article
+      include MachineChair::Modules::Base
+      attr_reader :id, :name
 
       def initialize(id, name = nil)
         @id = id

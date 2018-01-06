@@ -1,8 +1,1 @@
 require "machine_chair/modules/base"
-require "machine_chair/modules/article"
-require "machine_chair/modules/bidding"
-require "machine_chair/modules/keyword_relation"
-require "machine_chair/modules/keyword"
-require "machine_chair/modules/session_frame"
-require "machine_chair/modules/session_group"
-require "machine_chair/modules/session_name"

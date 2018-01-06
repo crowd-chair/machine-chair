@@ -1,7 +1,7 @@
 module MachineChair
   class State
     using MachineChair::Extensions
-    attr_reader :session_names, :articles, :biddings, :session_frame
+    attr_reader :session_names, :articles, :biddings, :session_frame, :keywords, :keyword_relations
 
     def initialize(session_names: [], articles: [], biddings: [], frames: {}, keywords: [], keyword_relations: [])
       @session_names = session_names.dup
@@ -212,7 +212,7 @@ module MachineChair
         }
       }
       cos_cache.normalize
-      
+
       # 高速化Ver(厳密な標準化をしない)
       # @session_names.each{|s|
       #   as = @cache[:bidding][:article][s.hash]
