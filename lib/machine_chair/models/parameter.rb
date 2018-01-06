@@ -3,7 +3,7 @@ module MachineChair
     class Parameter
       attr_reader :difficulty, :priority, :quality
 
-      def initialize(difficulty: 0.0, priority: 0.0, quality: 0.0)
+      def initialize(difficulty: nil, priority: 0.0, quality: 0.0)
         @difficulty = difficulty
         @priority = priority
         @quality = quality

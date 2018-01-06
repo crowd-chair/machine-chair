@@ -7,6 +7,10 @@ module MachineChair
         @frames[slot] && @frames[slot] > 0
       end
 
+      def unavailable?(slot)
+        !available?(slot)
+      end
+
       def max
         _min = @frames.keys.min
         _max = @frames.keys.max

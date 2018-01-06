@@ -4,7 +4,7 @@ module MachineChair
       include MachineChair::Modules::SessionFrame
 
       def initialize(frames = {})
-        @frames = frames
+        @frames = frames.dup
       end
     end
   end

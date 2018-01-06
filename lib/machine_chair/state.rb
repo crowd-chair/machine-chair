@@ -12,8 +12,19 @@ module MachineChair
       @session_frame = MachineChair::Models::SessionFrame.new(frames.dup)
 
       @session_names.each{|s| s.set_priority}
+
       init_cache
-      init_keyword_vector
+    end
+
+    def dup
+      self.class.new(
+        session_names: @session_names,
+        articles: @articles,
+        biddings: @biddings,
+        frames: @session_frame.frames,
+        keywords: @keywords,
+        keyword_relations: @keyword_relations
+      )
     end
 
     def init_cache
@@ -77,7 +88,7 @@ module MachineChair
 
     def calc_group_score(session_name, articles)
       _d = articles.map{|a| difficulty(a)}.sum
-      _q = articles.zip(articles.rotate(1)).map{|a| cos(*a)}.sum
+      _q = articles.combination(2).map{|a| cos(*a)}.sum
       _p = priority(session_name)
       MachineChair::Models::Score.new(difficulty: _d, quality: _q, priority: _p)
     end
@@ -183,12 +194,12 @@ module MachineChair
       @cache[:bidding][:bidding][bidding.hash].weight
     end
 
-    # 時間がかかる処理
+
     def cache_all_cos
+      # 時間がかかる処理
       cos_cache = Hash.new
-      @session_names.each{|s|
-        as = @cache[:bidding][:article][s.hash]
-        as.product(as).each{|a1, a2|
+      @articles.each{|a1|
+        @articles.each{|a2|
           next if a1 == a2
           next if cos_cache[to_cos_hash(a1, a2)]
           if cos_cache[to_cos_hash(a2, a1)]
@@ -201,6 +212,23 @@ module MachineChair
         }
       }
       cos_cache.normalize
+      
+      # 高速化Ver(厳密な標準化をしない)
+      # @session_names.each{|s|
+      #   as = @cache[:bidding][:article][s.hash]
+      #   as.product(as).each{|a1, a2|
+      #     next if a1 == a2
+      #     next if cos_cache[to_cos_hash(a1, a2)]
+      #     if cos_cache[to_cos_hash(a2, a1)]
+      #       cos_cache[to_cos_hash(a1, a2)] = cos_cache[to_cos_hash(a2, a1)]
+      #       next
+      #     end
+      #     v1 = @cache[:vector][:article][a1.hash]
+      #     v2 = @cache[:vector][:article][a2.hash]
+      #     cos_cache[to_cos_hash(a1, a2)] = v1.cos(v2)
+      #   }
+      # }
+      # cos_cache.normalize
     end
 
     def to_cos_hash(a1, a2)

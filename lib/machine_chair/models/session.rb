@@ -30,6 +30,27 @@ module MachineChair
         @session_frame
       end
 
+      def max_session_count
+        @session_group_counter.values.max
+      end
+
+      def calc_match_rate(session)
+        all_bidding = session.session_groups.map{|g| g.articles.map{|a| Bidding.new(g.session_name, a)}}.flatten
+        my_bidding = self.session_groups.map{|g| g.articles.map{|a| Bidding.new(g.session_name, a)}}.flatten
+
+        all = all_bidding.size
+        correct = all_bidding.select{|b| my_bidding.include? b}.size
+
+        puts "Match Rate: #{correct.to_f / all.to_f}, All: #{all}, Matches: #{correct}"
+        puts "Max Session Count: (#{@session_group_counter.values.max})"
+        puts "Remained Article Size: #{remained_articles.size}"
+        correct.to_f / all.to_f
+      end
+
+      def calc_point
+        @session_groups.map{|g| g.score.point}.sum
+      end
+
       def compare(session)
         all_bidding = session.session_groups.map{|g| g.articles.map{|a| Bidding.new(g.session_name, a)}}.flatten
         my_bidding = self.session_groups.map{|g| g.articles.map{|a| Bidding.new(g.session_name, a)}}.flatten
@@ -37,13 +58,14 @@ module MachineChair
         all = all_bidding.size
         correct = all_bidding.select{|b| my_bidding.include? b}.size
 
-        puts "Recall: #{correct.to_f/all.to_f}, All: #{all}, Correct: #{correct}"
+        puts "Match Rate: #{correct.to_f / all.to_f}, All: #{all}, Matches: #{correct}"
         puts "Max Session Count: (#{@session_group_counter.values.max})"
         puts "Remained Article Size: #{remained_articles.size}"
       end
 
-      def save(file_path)
-        File.open("#{file_path}/Session_#{Time.now}.dat", "w") do |file|
+      def save(file_path, file_name: nil)
+        file_name = "Session_#{Time.now}.dat" if file_name.nil?
+        File.open("#{file_path}/#{file_name}", "w") do |file|
           pr = @parameter
           point = @session_groups.map{|g| g.score.point}.sum
 
@@ -68,7 +90,7 @@ module MachineChair
               file.puts "Name: #{article.name}"
             end
           end
-          
+
           file.puts "----Remained Articles----"
           remained_articles.each do |article|
             file.puts "Name: #{article.name}"
