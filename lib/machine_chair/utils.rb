@@ -18,11 +18,26 @@ module MachineChair
         Math.sqrt(var)
       end
 
+      # def normalize
+      #   m = mean
+      #   s = sd
+      #   return self if s == 0
+      #   map { |a| (a - m) / s }
+      # end
+
       def normalize
-        m = mean
-        s = sd
-        return self if s == 0
-        map { |a| (a - m) / s }
+        m = self.max
+        return self if m == 0
+        map { |a| a / m }
+      end
+
+      def normalize_minus
+        # 0を最大とする
+        # x' = max - x / max
+        x = self.map{|a| -1 * a}
+        m = x.max
+        return self if m == 0
+        x.map{|a| (m - a).to_f / m}
       end
     end
 

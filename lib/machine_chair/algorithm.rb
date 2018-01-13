@@ -18,11 +18,12 @@ module MachineChair
       while state.is_continued? do
         # 計算量を減らすためにグループを作成するためのセッションを絞り込む
         article_seeds = prune_articles(state)
+        @seeds = article_seeds
         # セッションの候補を投稿から見つける
         session_candidates = candidate_sessions(state, article_seeds)
         # 選択されたセッション集合から一番スコアの高いグループを作成する
         group = find_best_group(state, session_candidates, param)
-        if group
+        if group && group.group_score(param) > 0
           state.remove(articles: group.articles)
           state.update(group)
           session.append group
@@ -48,7 +49,7 @@ module MachineChair
       _min = state.session_frame.min
       _max = state.session_frame.max
       best_group_candidates = []
-      _max.downto(_min).each{ |slot|
+      _min.upto(_max).each{ |slot|
         next if state.session_frame.unavailable? slot
         best_group_candidates.concat candidates.map{ |c|
           group = find_best_group_by(state, c, slot, param)
@@ -63,6 +64,17 @@ module MachineChair
 
     private
 
+    def is_satisfy_constraints(group)
+      # 著者に半分以上同じ人がいた場合 true
+      author_groups = group.map{ |article|
+        article.authors
+      }.flatten.group_by(&:itself).map {|k, v| [k, v.size] }
+      author_counts = Hash[author_groups]
+      max_count = author_counts.values.max
+      return true if max_count > group.size.to_f / 2
+      false
+    end
+
     def find_best_group_by(state, session_name, slot, param)
       articles = state.find_articles(session_name)
       return nil if articles.size < slot
@@ -74,15 +86,21 @@ module MachineChair
         best_group_articles = articles.sort_by{|a| -1.0 * scores[a].calc(param)}[0...slot]
         group_score = state.calc_group_score(session_name, best_group_articles)
         best_group = MachineChair::Models::SessionGroup.new(
-          session_name, best_group_articles, score: group_score
+          session_name, best_group_articles, score: group_score, seed: @seeds
         )
       elsif @greedy
         # 近似解
         # 各投稿に対して一番小さいグループを作り貪欲法でグループを作成
+
+        # [NOTE]
+        # seedを必ず入れるようにしてみる(k=1限定)
+        seed = @seeds.first
+        articles = articles - [seed]
+
         best_group = articles.map{ |a|
-          group = []
+          group = [seed]
           candidates = articles.dup
-          (0...slot).each { |i|
+          (1...slot).each { |i|
             if i == 0
               group << a
               candidates.delete a
@@ -95,15 +113,22 @@ module MachineChair
             candidates.delete max_candidate
           }
           score = state.calc_group_score(session_name, group)
-          MachineChair::Models::SessionGroup.new(session_name, group, score: score)
+          MachineChair::Models::SessionGroup.new(session_name, group, score: score, seed: @seeds)
         }.max_by{|g| g.group_score(param)}
       else
         # グループのスコアを求めてその中の最大スコアを持つグループを返す
         # [TODO] 高速化させる必要がある
-        best_group = articles.combination(slot).map{ |a|
-          score = state.calc_group_score(session_name, a)
-          MachineChair::Models::SessionGroup.new(session_name, a, score: score)
-        }.max_by{|g| g.group_score(param)}
+        articles = articles - @seeds
+        best_group = articles.combination(slot - @seeds.size).map{ |a|
+          group = a + @seeds
+          # 制約を満たしていない場合はnilを返す
+          if is_satisfy_constraints(group)
+            nil
+          else
+            score = state.calc_group_score(session_name, group)
+            MachineChair::Models::SessionGroup.new(session_name, group, score: score, seed: @seeds)
+          end
+        }.compact.max_by{|g| g.group_score(param)}
       end
       best_group
     end

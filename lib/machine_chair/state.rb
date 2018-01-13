@@ -87,8 +87,8 @@ module MachineChair
     end
 
     def calc_group_score(session_name, articles)
-      _d = articles.map{|a| difficulty(a)}.sum
-      _q = articles.combination(2).map{|a| cos(*a)}.sum
+      _d = articles.map{|a| difficulty(a)}.mean
+      _q = articles.combination(2).map{|a| cos(*a)}.mean
       _p = priority(session_name)
       MachineChair::Models::Score.new(difficulty: _d, quality: _q, priority: _p)
     end
@@ -196,27 +196,11 @@ module MachineChair
 
 
     def cache_all_cos
-      # 時間がかかる処理
       cos_cache = Hash.new
-      @articles.each{|a1|
-        @articles.each{|a2|
-          next if a1 == a2
-          next if cos_cache[to_cos_hash(a1, a2)]
-          if cos_cache[to_cos_hash(a2, a1)]
-            cos_cache[to_cos_hash(a1, a2)] = cos_cache[to_cos_hash(a2, a1)]
-            next
-          end
-          v1 = @cache[:vector][:article][a1.hash]
-          v2 = @cache[:vector][:article][a2.hash]
-          cos_cache[to_cos_hash(a1, a2)] = v1.cos(v2)
-        }
-      }
-      cos_cache.normalize
-
-      # 高速化Ver(厳密な標準化をしない)
-      # @session_names.each{|s|
-      #   as = @cache[:bidding][:article][s.hash]
-      #   as.product(as).each{|a1, a2|
+      
+      # 時間がかかる処理
+      # @articles.each{|a1|
+      #   @articles.each{|a2|
       #     next if a1 == a2
       #     next if cos_cache[to_cos_hash(a1, a2)]
       #     if cos_cache[to_cos_hash(a2, a1)]
@@ -228,7 +212,24 @@ module MachineChair
       #     cos_cache[to_cos_hash(a1, a2)] = v1.cos(v2)
       #   }
       # }
-      # cos_cache.normalize
+      # cos_cache
+
+      # 高速化Ver(厳密な標準化をしない)
+      @session_names.each{|s|
+        as = @cache[:bidding][:article][s.hash]
+        as.product(as).each{|a1, a2|
+          next if a1 == a2
+          next if cos_cache[to_cos_hash(a1, a2)]
+          if cos_cache[to_cos_hash(a2, a1)]
+            cos_cache[to_cos_hash(a1, a2)] = cos_cache[to_cos_hash(a2, a1)]
+            next
+          end
+          v1 = @cache[:vector][:article][a1.hash]
+          v2 = @cache[:vector][:article][a2.hash]
+          cos_cache[to_cos_hash(a1, a2)] = v1.cos(v2)
+        }
+      }
+      cos_cache
     end
 
     def to_cos_hash(a1, a2)
@@ -249,7 +250,7 @@ module MachineChair
 
     def normalize_priority_cache
       _h = @session_names.map{|h| h.hash}
-      _p = @session_names.map{|s| calc_priority(s)}.normalize
+      _p = @session_names.map{|s| calc_priority(s)}.normalize_minus
       Hash[*[_h, _p].transpose.flatten]
     end
 

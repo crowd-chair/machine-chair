@@ -86,14 +86,26 @@ module MachineChair
 
             file.puts "----#{group.session_name.name} (#{count})----"
             file.puts "Score: #{score} => {Difficulty:#{difficulty}, Priority:#{priority}, Quality:#{quality}}"
+            # file.puts "Seed: #{group.seed.map{|s| s.name}.join(", ")}" if group.seed.size > 0
+
+            seed = group.seed.first
+
             group.articles.each do |article|
-              file.puts "Name: #{article.name}"
+              if article.keywords.size == 0
+                file.puts "Name: #{article.name}"
+              else
+                file.puts "Name: #{article.name}, Keywords: #{article.keywords.join(", ")}"
+              end
             end
           end
 
           file.puts "----Remained Articles----"
           remained_articles.each do |article|
-            file.puts "Name: #{article.name}"
+            if article.keywords.size == 0
+              file.puts "Name: #{article.name}"
+            else
+              file.puts "Name: #{article.name}, Keywords: #{article.keywords.join(", ")}"
+            end
           end
         end
       end
