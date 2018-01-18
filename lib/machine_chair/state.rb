@@ -1,17 +1,28 @@
 module MachineChair
   class State
     using MachineChair::Extensions
-    attr_reader :session_names, :articles, :biddings, :session_frame, :keywords, :keyword_relations
+    attr_reader :session_names, :articles, :biddings, :keywords, :keyword_relations, :session_name_limit
 
-    def initialize(session_names: [], articles: [], biddings: [], frames: {}, keywords: [], keyword_relations: [])
+    def initialize(
+      session_names: [],
+      articles: [],
+      biddings: [],
+      keywords: [],
+      keyword_relations: [],
+      session_name_limit: 5
+    )
       @session_names = session_names.dup
       @articles = articles.dup
       @biddings = biddings.dup
       @keywords = keywords.dup
       @keyword_relations = keyword_relations.dup
-      @session_frame = MachineChair::Models::SessionFrame.new(frames.dup)
+      @session_name_limit = session_name_limit
 
-      @session_names.each{|s| s.set_priority}
+      @session_names_counter = {}
+      @session_names.each {|name|
+        @session_names_counter[name.hash] = 0
+      }
+      @max_biddings = 5
 
       init_cache
     end
@@ -21,9 +32,9 @@ module MachineChair
         session_names: @session_names,
         articles: @articles,
         biddings: @biddings,
-        frames: @session_frame.frames,
         keywords: @keywords,
-        keyword_relations: @keyword_relations
+        keyword_relations: @keyword_relations,
+        session_name_limit: @session_name_limit
       )
     end
 
@@ -35,18 +46,15 @@ module MachineChair
       @cache[:score] = init_score_cache
     end
 
-    def remove(articles: [])
+    def remove_articles(articles)
       @articles -= articles
       @biddings -= @biddings.select{|b| articles.include? b.article}
       @cache[:bidding] = init_bidding_cache
+      @cache[:score][:difficulty] = normalize_difficulty_cache
     end
 
     def update(group)
-      update_priority(group.session_name)
-      @session_frame.update(group)
-
-      @cache[:score][:priority] = normalize_priority_cache
-      @cache[:score][:difficulty] = normalize_difficulty_cache
+      update_counter(group.session_name)
     end
 
     def find_articles(session_name)
@@ -62,16 +70,18 @@ module MachineChair
     end
 
     def difficulty(article)
-      @cache[:score][:difficulty][article.hash]
+      @cache[:score][:difficulty][article.hash] || 1.0
     end
 
-    def priority(session_name)
-      @cache[:score][:priority][session_name.hash]
-    end
-
-    def quality(session_name, article)
-      bidding = MachineChair::Models::Bidding.new(session_name, article)
-      @cache[:score][:quality][bidding.hash]
+    # articlesを覗いた論文のDifficultyの平均を計算
+    # このDifficultyが低い方が仲間を見つけやすい
+    def calc_r_difficulty(articles)
+      r_articles = @articles - articles
+      return 0.0 if r_articles.empty?
+      # r_biddings = @biddings - @biddings.select{|b| articles.include? b.article}
+      # hash = normalize_difficulty_cache_detect(r_articles, r_biddings)
+      # r_dif = 1.0 - r_articles.map{|a| hash[a.hash]}.mean
+      r_dif = 1.0 - r_articles.map{|a| difficulty(a)}.mean
     end
 
     def cos(a1, a2)
@@ -86,18 +96,79 @@ module MachineChair
       @articles.empty?
     end
 
-    def calc_group_score(session_name, articles)
-      _d = articles.map{|a| difficulty(a)}.mean
-      _q = articles.combination(2).map{|a| cos(*a)}.mean
-      _p = priority(session_name)
+    def calc_group_score(session_name, articles, calc: :use_keyword)
+      _d = calc_r_difficulty(articles)
+      _p = calc_group_priority(session_name)
+      _q = nil
+      if calc == :use_keyword
+        _q = calc_group_quality_by_keyword(session_name, articles)
+      elsif calc == :use_bidding
+        _q = calc_group_quality_by_bidding(session_name, articles)
+      else
+        _q = calc_group_quality_by_all(session_name, articles)
+      end
+      # p "Rem: #{@articles.size} d: #{_d}, p: #{_p}, q: #{_q}"
       MachineChair::Models::Score.new(difficulty: _d, quality: _q, priority: _p)
     end
 
-    def calc_score(session_name, article)
-      _d = difficulty(article)
-      _q = quality(session_name, article)
-      _p = priority(session_name)
-      MachineChair::Models::Score.new(difficulty: _d, quality: _q, priority: _p)
+    def calc_group_difficulty(articles)
+      articles.map{|a| difficulty(a)}.mean
+    end
+
+    def calc_group_priority(session_name)
+      count = @session_names_counter[session_name.hash]
+      per_count = 1 / @session_name_limit.to_f
+      priority = session_name.initial_priority - per_count * count
+      return 0 if priority < 0
+      priority
+    end
+
+    def calc_group_quality_by_all(session_name, articles)
+      [
+        bidding_score(session_name, articles) * 5.0,
+        keyword_similarity(session_name, articles) * 1.0
+      ].sum / 6.0
+    end
+
+    def calc_group_quality_by_keyword(session_name, articles)
+      keyword_similarity(session_name, articles)
+    end
+
+    def calc_group_quality_by_bidding(session_name, articles)
+      [
+        bidding_score(session_name, articles) * 5.0,
+        bidding_matching(session_name, articles) * 1.0
+      ].sum / 6.0
+    end
+
+    def bidding_score(session_name, articles)
+      articles.map{|article| calc_bidding_weight(session_name, article)}.mean
+    end
+
+    def bidding_matching(session_name, articles)
+      all_bidding_names = articles.map{|article| find_session_names(article)}.flatten
+      names = all_bidding_names.uniq
+      names.select{|name| all_bidding_names.count(name) == articles.size }.size / @max_biddings.to_f
+    end
+
+    def keyword_similarity(session_name, articles)
+      articles.combination(2).map{|a| cos(*a)}.mean
+    end
+
+    def calc_difficulty(article)
+      session_names = @cache[:bidding][:session_name][article.hash]
+      return 1.0 if session_names.nil? || session_names.empty?
+
+      articles = session_names.map { |s|
+        @cache[:bidding][:article][s.hash]
+      }.flatten.uniq
+      return 1.0 / articles.size.to_f
+    end
+
+    def calc_bidding_weight(session_name, article)
+      bidding = find_bidding MachineChair::Models::Bidding.new(session_name, article)
+      return 0.0 if bidding.nil?
+      bidding.weight
     end
 
     private
@@ -170,63 +241,21 @@ module MachineChair
     def init_score_cache
       {
         difficulty: normalize_difficulty_cache,
-        priority: normalize_priority_cache,
-        quality: normalize_quality_cache,
         cos: cache_all_cos
       }
     end
 
-    def calc_difficulty(article)
-      session_names = @cache[:bidding][:session_name][article.hash]
-      return 0.0 if session_names.nil? || session_names.empty?
-
-      articles = session_names.map { |s|
-        @cache[:bidding][:article][s.hash]
-      }.flatten.uniq
-      return 1.0 / articles.size.to_f
-    end
-
-    def calc_priority(session_name)
-      session_name.priority
-    end
-
-    def calc_quality(bidding)
-      @cache[:bidding][:bidding][bidding.hash].weight
-    end
-
-
     def cache_all_cos
       cos_cache = Hash.new
-      
-      # 時間がかかる処理
-      # @articles.each{|a1|
-      #   @articles.each{|a2|
-      #     next if a1 == a2
-      #     next if cos_cache[to_cos_hash(a1, a2)]
-      #     if cos_cache[to_cos_hash(a2, a1)]
-      #       cos_cache[to_cos_hash(a1, a2)] = cos_cache[to_cos_hash(a2, a1)]
-      #       next
-      #     end
-      #     v1 = @cache[:vector][:article][a1.hash]
-      #     v2 = @cache[:vector][:article][a2.hash]
-      #     cos_cache[to_cos_hash(a1, a2)] = v1.cos(v2)
-      #   }
-      # }
-      # cos_cache
 
       # 高速化Ver(厳密な標準化をしない)
       @session_names.each{|s|
         as = @cache[:bidding][:article][s.hash]
-        as.product(as).each{|a1, a2|
-          next if a1 == a2
-          next if cos_cache[to_cos_hash(a1, a2)]
-          if cos_cache[to_cos_hash(a2, a1)]
-            cos_cache[to_cos_hash(a1, a2)] = cos_cache[to_cos_hash(a2, a1)]
-            next
-          end
+        as.combination(2).each{|a1, a2|
           v1 = @cache[:vector][:article][a1.hash]
           v2 = @cache[:vector][:article][a2.hash]
           cos_cache[to_cos_hash(a1, a2)] = v1.cos(v2)
+          cos_cache[to_cos_hash(a2, a1)] = v1.cos(v2)
         }
       }
       cos_cache
@@ -242,20 +271,31 @@ module MachineChair
       Hash[*[_h, _d].transpose.flatten]
     end
 
-    def normalize_quality_cache
-      _h = @biddings.map{|b| b.hash}
-      _q = @biddings.map{|b| calc_quality(b)}.normalize
-      Hash[*[_h, _q].transpose.flatten]
+    def normalize_difficulty_cache_detect(articles, biddings)
+      _h = articles.map{|a| a.hash}
+      cache_articles = {}
+      cache_sessions = {}
+      biddings.each do |bidding|
+        cache_sessions[bidding.article.hash] ||= []
+        cache_sessions[bidding.article.hash] << bidding.session_name
+        cache_articles[bidding.session_name.hash] ||= []
+        cache_articles[bidding.session_name.hash] << bidding.article
+      end
+
+      _d = articles.map{|a|
+        session_names = cache_sessions[a.hash] || []
+        commons = session_names.map{|n| cache_articles[n.hash]}.flatten.uniq
+        if commons.size == 0
+          1.0
+        else
+          1.0 / commons.size
+        end
+      }.normalize
+      Hash[*[_h, _d].transpose.flatten]
     end
 
-    def normalize_priority_cache
-      _h = @session_names.map{|h| h.hash}
-      _p = @session_names.map{|s| calc_priority(s)}.normalize_minus
-      Hash[*[_h, _p].transpose.flatten]
-    end
-
-    def update_priority(session_name)
-      session_name.down_priority
+    def update_counter(session_name)
+      @session_names_counter[session_name.hash] += 1
     end
   end
 end

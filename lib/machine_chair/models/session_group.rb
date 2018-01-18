@@ -3,7 +3,7 @@ module MachineChair
     class SessionGroup
       attr_reader :session_name, :articles, :score, :seed
 
-      def initialize(session_name, articles, score: nil, seed: [])
+      def initialize(session_name, articles, score: nil, seed: nil)
         @session_name = session_name
         @articles = articles
         @score = score

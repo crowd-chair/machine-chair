@@ -1,14 +1,17 @@
+require 'json'
+
 module MachineChair
   module Models
     class Session
       using MachineChair::Extensions
-      attr_accessor :session_groups, :articles, :parameter, :session_frame
+      attr_accessor :session_groups, :remained_articles, :parameter
 
-      def initialize(session_groups = [], articles = [], session_frame = nil, parameter: nil)
+      def initialize(session_groups = [], parameter: nil)
         @session_group_counter = Hash.new
+        @session_slot_counter = Hash.new
+
         @session_groups = session_groups
-        @articles = articles
-        @session_frame = session_frame
+        @remained_articles = []
         @parameter = parameter
       end
 
@@ -16,99 +19,173 @@ module MachineChair
         @session_groups << session_group
         @session_group_counter[session_group.session_name.hash] ||= 0
         @session_group_counter[session_group.session_name.hash] += 1
+
+        @session_slot_counter[session_group.articles.size] ||= 0
+        @session_slot_counter[session_group.articles.size] += 1
       end
 
-      def append_remained_articles(articles)
-        @articles += articles
-      end
-
-      def remained_articles
-        @articles
-      end
-
-      def remained_session_frame
-        @session_frame
-      end
-
-      def max_session_count
+      def count_max_session_name
         @session_group_counter.values.max
       end
 
-      def calc_match_rate(session)
-        all_bidding = session.session_groups.map{|g| g.articles.map{|a| Bidding.new(g.session_name, a)}}.flatten
-        my_bidding = self.session_groups.map{|g| g.articles.map{|a| Bidding.new(g.session_name, a)}}.flatten
-
-        all = all_bidding.size
-        correct = all_bidding.select{|b| my_bidding.include? b}.size
-
-        puts "Match Rate: #{correct.to_f / all.to_f}, All: #{all}, Matches: #{correct}"
-        puts "Max Session Count: (#{@session_group_counter.values.max})"
-        puts "Remained Article Size: #{remained_articles.size}"
-        correct.to_f / all.to_f
+      def count_groups_with_slot(slot)
+        @session_slot_counter[slot] || 0
       end
 
+      def count_session_name(session_name)
+        @session_group_counter[session_name.hash] || 0
+      end
+
+      # セッションの評価を行う
+      # セッション名の分散値が低く，グループのQualityの平均が高いと良い
       def calc_point
-        @session_groups.map{|g| g.score.point}.sum
+        [calc_priority_point, calc_quality_point].mean
       end
 
-      def compare(session)
-        all_bidding = session.session_groups.map{|g| g.articles.map{|a| Bidding.new(g.session_name, a)}}.flatten
-        my_bidding = self.session_groups.map{|g| g.articles.map{|a| Bidding.new(g.session_name, a)}}.flatten
-
-        all = all_bidding.size
-        correct = all_bidding.select{|b| my_bidding.include? b}.size
-
-        puts "Match Rate: #{correct.to_f / all.to_f}, All: #{all}, Matches: #{correct}"
-        puts "Max Session Count: (#{@session_group_counter.values.max})"
-        puts "Remained Article Size: #{remained_articles.size}"
+      def calc_quality_point
+        @session_groups.map{|g| g.score.quality}.mean
       end
 
-      def save(file_path, file_name: nil)
+      # [NOTE]
+      # 分散よりもpriorityが高い方が分かりやすい
+      def calc_priority_point
+        @session_groups.map{|g| g.score.priority}.mean
+      end
+
+      # [TODO]
+      # Priorityの正規化がこの式で良いかは要検討
+      # 分散が0のときに1, 分散が最大(max_count?)のとき0になるように正規化
+      # def calc_priority_point
+      #   session_names = @session_groups.map{|g| g.session_name}.uniq
+      #   session_names_sd = session_names.map{|n| count_session_name(n)}.sd
+      #   max_count = count_max_session_name
+      #   (max_count - session_names_sd) / max_count.to_f
+      # end
+
+      def eval
+        calc_point
+      end
+
+      def to_json(tag: "")
+        articles = @session_groups.map{|g| g.articles}.flatten + @remained_articles
+        keywords = articles.map{|article| article.keywords}.flatten.uniq
+        session_names = @session_groups.map{|g| g.session_name}.uniq
+        sessions = @session_groups
+        parameter = @parameter
+        point = calc_point
+        quality_point = calc_quality_point
+        priority_point = calc_priority_point
+        max_count_session = session_names.max_by{|name| @session_group_counter[name.hash]}
+
+        _session_counter = {}
+
+        {
+          tag: tag,
+          articles: articles.map{ |article|
+            {
+              id: article.id,
+              name: article.name,
+              keywords: article.keywords.map{|keyword| keyword.id}
+            }
+          },
+          session_names: session_names.map { |session_name|
+            {
+              id: session_name.id,
+              name: session_name.name
+            }
+          },
+          keywords: keywords.map{|keyword|
+            {
+              id: keyword.id,
+              name: keyword.name
+            }
+          },
+          sessions: sessions.map { |group|
+            _session_counter[group.session_name.hash] ||= 0
+            _session_counter[group.session_name.hash] += 1
+            count = _session_counter[group.session_name.hash]
+
+            {
+              session_name: group.session_name.id,
+              articles: group.articles.map{|article| article.id},
+              score: {
+                difficulty: group.score.difficulty,
+                priority: group.score.priority,
+                quality: group.score.quality
+              },
+              count: count
+            }
+          },
+          eval: {
+            point: point,
+            priority_point: priority_point,
+            quality_point: quality_point,
+            max_session: {
+              session_name: max_count_session.id,
+              count: count_max_session_name
+            }
+          }
+        }.to_json
+      end
+
+      def save(file_path: nil, file_name: nil)
         file_name = "Session_#{Time.now}.dat" if file_name.nil?
-        File.open("#{file_path}/#{file_name}", "w") do |file|
-          pr = @parameter
-          point = @session_groups.map{|g| g.score.point}.sum
+        psth = [file_path, file_name].compact.join("/")
+        File.open(psth, "w") do |file|
+          pr             = @parameter
+          point          = pretty calc_point
+          point_quality  = pretty calc_quality_point
+          point_priority = pretty calc_priority_point
+          dif            = pretty @parameter.difficulty
+          pri            = pretty @parameter.priority
+          qua            = pretty @parameter.quality
 
           file.puts "Session Result: #{Time.now}"
-          file.puts "Session Point: #{point}"
-          file.puts "Parameter: {Difficulty:#{pr.difficulty}, Priority:#{pr.priority}, Quality:#{pr.quality}}"
-          file.puts "Remained Articles: #{remained_articles.size}"
+          file.puts "Parameter: {Difficulty:#{dif}, Priority:#{pri}, Quality:#{qua}}"
+          file.puts "Session Point: #{point} (Priority: #{point_priority}, Quality: #{point_quality})"
+          file.puts "Remained Articles: #{@remained_articles.size}"
+
           counter = Hash.new
           @session_groups.each do |group|
             session_name = group.session_name
             counter[session_name.hash] = 0 unless counter[session_name.hash]
             counter[session_name.hash] += 1
             count = counter[session_name.hash]
-            difficulty = group.score.difficulty
-            priority = group.score.priority
-            quality = group.score.quality
-            score = group.score.calc(@parameter)
+
+            dif = pretty group.score.difficulty
+            pri = pretty group.score.priority
+            qua = pretty group.score.quality
+            score = pretty group.score.calc(@parameter)
 
             file.puts "----#{group.session_name.name} (#{count})----"
-            file.puts "Score: #{score} => {Difficulty:#{difficulty}, Priority:#{priority}, Quality:#{quality}}"
-            # file.puts "Seed: #{group.seed.map{|s| s.name}.join(", ")}" if group.seed.size > 0
+            file.puts "Score: #{score} => {Difficulty:#{dif}, Priority:#{pri}, Quality:#{qua}}"
 
-            seed = group.seed.first
+            seed = group.seed
 
             group.articles.each do |article|
-              if article.keywords.size == 0
-                file.puts "Name: #{article.name}"
+              if article == seed
+                file.puts "*Name: #{article.name}"
               else
-                file.puts "Name: #{article.name}, Keywords: #{article.keywords.join(", ")}"
+                file.puts "Name: #{article.name}"
               end
             end
           end
 
-          file.puts "----Remained Articles----"
-          remained_articles.each do |article|
-            if article.keywords.size == 0
+          if @remained_articles.size > 0
+            file.puts "----Remained Articles----"
+            @remained_articles.each do |article|
               file.puts "Name: #{article.name}"
-            else
-              file.puts "Name: #{article.name}, Keywords: #{article.keywords.join(", ")}"
             end
           end
         end
       end
+
+      private
+
+      def pretty(f)
+        sprintf("%.3f", f)
+      end
+
     end
   end
 end

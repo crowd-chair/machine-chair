@@ -2,7 +2,7 @@ module MachineChair
   module Extensions
     refine Array do
       def sum
-        inject(:+)
+        inject(:+) || 0
       end
 
       def mean
@@ -29,15 +29,6 @@ module MachineChair
         m = self.max
         return self if m == 0
         map { |a| a / m }
-      end
-
-      def normalize_minus
-        # 0を最大とする
-        # x' = max - x / max
-        x = self.map{|a| -1 * a}
-        m = x.max
-        return self if m == 0
-        x.map{|a| (m - a).to_f / m}
       end
     end
 
