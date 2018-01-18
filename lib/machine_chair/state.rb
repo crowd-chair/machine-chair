@@ -248,9 +248,10 @@ module MachineChair
     def cache_all_cos
       cos_cache = Hash.new
 
-      # 高速化Ver(厳密な標準化をしない)
+      # 高速化Ver(使うBiddingだけ保持する）
       @session_names.each{|s|
         as = @cache[:bidding][:article][s.hash]
+        next if as.nil?
         as.combination(2).each{|a1, a2|
           v1 = @cache[:vector][:article][a1.hash]
           v2 = @cache[:vector][:article][a2.hash]
