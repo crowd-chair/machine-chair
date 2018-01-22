@@ -96,17 +96,10 @@ module MachineChair
       @articles.empty?
     end
 
-    def calc_group_score(session_name, articles, calc: :use_keyword)
+    def calc_group_score(session_name, articles, b: b, d: d)
       _d = calc_r_difficulty(articles)
       _p = calc_group_priority(session_name)
-      _q = nil
-      if calc == :use_keyword
-        _q = calc_group_quality_by_keyword(session_name, articles)
-      elsif calc == :use_bidding
-        _q = calc_group_quality_by_bidding(session_name, articles)
-      else
-        _q = calc_group_quality_by_all(session_name, articles)
-      end
+      _q = calc_group_quality_by_all(session_name, articles, b, d)
       # p "Rem: #{@articles.size} d: #{_d}, p: #{_p}, q: #{_q}"
       MachineChair::Models::Score.new(difficulty: _d, quality: _q, priority: _p)
     end
@@ -123,22 +116,11 @@ module MachineChair
       priority
     end
 
-    def calc_group_quality_by_all(session_name, articles)
+    def calc_group_quality_by_all(session_name, articles, b, d)
       [
-        bidding_score(session_name, articles) * 5.0,
-        keyword_similarity(session_name, articles) * 1.0
-      ].sum / 6.0
-    end
-
-    def calc_group_quality_by_keyword(session_name, articles)
-      keyword_similarity(session_name, articles)
-    end
-
-    def calc_group_quality_by_bidding(session_name, articles)
-      [
-        bidding_score(session_name, articles) * 5.0,
-        bidding_matching(session_name, articles) * 1.0
-      ].sum / 6.0
+        bidding_score(session_name, articles) * b.to_f,
+        keyword_similarity(session_name, articles) * d.to_f
+      ].sum / (b + d).to_f
     end
 
     def bidding_score(session_name, articles)

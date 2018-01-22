@@ -5,9 +5,10 @@ module MachineChair
     # @param [MachineChair::Models::Parameter] param アルゴリズムのパラメータ
     # @param [MachineChair::Models::Frame] frame セッション作成可能枠
     # @option [Bool] :is_test 動作実験用
-    # @option [:use_keyword or :use_bidding] :calc Qulityの計算方法でキーワードを用いるか，投票結果を用いるか
+    # @option [Number] :bidding パラメータb, bidding taskの優先度
+    # @option [Number] :feedback パラメータd, feedback taskの優先度
     # @return [MachineChair::Models::Session] session 生成したセッションの集合を返す
-    def propose(state, param, frame, is_test: false, calc: :use_keyword)
+    def propose(state, param, frame, is_test: false, bidding: 5, feedback: 1)
       all_articles = state.articles.dup
       session = MachineChair::Models::Session.new(parameter: param)
       while state.is_continued? do
@@ -47,7 +48,7 @@ module MachineChair
             articles.combination(slot - 1).map{ |_group|
               group = [seed] + _group
               next if is_satisfy_constraints(group)
-              score = state.calc_group_score(candidate, group, calc: calc)
+              score = state.calc_group_score(candidate, group, b: bidding, d: feedback)
               groups << MachineChair::Models::SessionGroup.new(candidate, group, score: score, seed: seed)
 
               # 動作確認用

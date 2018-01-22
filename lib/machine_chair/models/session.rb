@@ -43,13 +43,15 @@ module MachineChair
       end
 
       def calc_quality_point
-        @session_groups.map{|g| g.score.quality}.mean
+        scores = @session_groups.map{|g| g.score}.compact
+        scores.map{|score| score.quality}.mean
       end
 
       # [NOTE]
       # 分散よりもpriorityが高い方が分かりやすい
       def calc_priority_point
-        @session_groups.map{|g| g.score.priority}.mean
+        scores = @session_groups.map{|g| g.score}.compact
+        scores.map{|score| score.priority}.mean
       end
 
       # [TODO]
@@ -85,7 +87,7 @@ module MachineChair
             {
               id: article.id,
               name: article.name,
-              keywords: article.keywords.map{|keyword| keyword.id}
+              # keywords: article.keywords.map{|keyword| keyword.id}
             }
           },
           session_names: session_names.map { |session_name|
@@ -94,12 +96,12 @@ module MachineChair
               name: session_name.name
             }
           },
-          keywords: keywords.map{|keyword|
-            {
-              id: keyword.id,
-              name: keyword.name
-            }
-          },
+          # keywords: keywords.map{|keyword|
+          #   {
+          #     id: keyword.id,
+          #     name: keyword.name
+          #   }
+          # },
           sessions: sessions.map { |group|
             _session_counter[group.session_name.hash] ||= 0
             _session_counter[group.session_name.hash] += 1
@@ -108,11 +110,6 @@ module MachineChair
             {
               session_name: group.session_name.id,
               articles: group.articles.map{|article| article.id},
-              score: {
-                difficulty: group.score.difficulty,
-                priority: group.score.priority,
-                quality: group.score.quality
-              },
               count: count
             }
           },
@@ -152,21 +149,27 @@ module MachineChair
             counter[session_name.hash] += 1
             count = counter[session_name.hash]
 
-            dif = pretty group.score.difficulty
-            pri = pretty group.score.priority
-            qua = pretty group.score.quality
-            score = pretty group.score.calc(@parameter)
-
             file.puts "----#{group.session_name.name} (#{count})----"
-            file.puts "Score: #{score} => {Difficulty:#{dif}, Priority:#{pri}, Quality:#{qua}}"
 
+            if(group.score)
+              dif = pretty group.score.difficulty
+              pri = pretty group.score.priority
+              qua = pretty group.score.quality
+              score = pretty group.score.calc(@parameter)
+              file.puts "Score: #{score} => {Difficulty:#{dif}, Priority:#{pri}, Quality:#{qua}}"
+            end
             seed = group.seed
-
-            group.articles.each do |article|
-              if article == seed
-                file.puts "*Name: #{article.name}"
-              else
+            if seed.nil?
+              group.articles.each do |article|
                 file.puts "Name: #{article.name}"
+              end
+            else
+              group.articles.each do |article|
+                if article == seed
+                  file.puts "*Name: #{article.name}"
+                else
+                  file.puts "Name: #{article.name}"
+                end
               end
             end
           end
