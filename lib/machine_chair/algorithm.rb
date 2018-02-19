@@ -9,6 +9,8 @@ module MachineChair
     # @option [Number] :feedback パラメータd, feedback taskの優先度
     # @return [MachineChair::Models::Session] session 生成したセッションの集合を返す
     def propose(state, param, frame, is_test: false, bidding: 5, feedback: 1)
+      seed_size = 1
+
       all_articles = state.articles.dup
       session = MachineChair::Models::Session.new(parameter: param)
       while state.is_continued? do
@@ -17,45 +19,48 @@ module MachineChair
           yield(rate.to_i)
         end
 
-        seed = state.articles.max_by{|article| state.difficulty(article)}
-        candidates = state.find_session_names(seed)
+        seeds = state.articles.max_by(seed_size){|article| state.difficulty(article)}
 
         _min = frame.min
         _max = frame.max
 
         groups = []
-        _min.upto(_max).each{ |slot|
-          next if session.count_groups_with_slot(slot) >= frame.limit(slot)
-          candidates.each { |candidate|
-            articles = state.find_articles(candidate)
-            next if articles.size < slot
 
-            articles = articles - [seed]
+        seeds.each do |seed|
+          candidates = state.find_session_names(seed) || []
+          _min.upto(_max).each{ |slot|
+            next if session.count_groups_with_slot(slot) >= frame.limit(slot)
+            candidates.each { |candidate|
+              articles = state.find_articles(candidate)
+              next if articles.size < slot
 
-            # [NOTE] 高速化処理
-            # Difficultyが高い論文上位X件のみを使う
-            prune_size = 10
-            pruned_articles = []
-            biddings = articles
-              .map{|article| MachineChair::Models::Bidding.new(candidate, article)}
-              .map{|bidding| state.find_bidding(bidding)}
-            (1..5).each do |rank|
-              pruned_articles.concat biddings.select{|b| b.rank == rank}.map{|b| b.article}
-              break if pruned_articles.size >= prune_size
-            end
-            articles = pruned_articles
+              articles = articles - [seed]
 
-            articles.combination(slot - 1).map{ |_group|
-              group = [seed] + _group
-              next if is_satisfy_constraints(group)
-              score = state.calc_group_score(candidate, group, b: bidding, d: feedback)
-              groups << MachineChair::Models::SessionGroup.new(candidate, group, score: score, seed: seed)
+              # [NOTE] 高速化処理
+              # Biddingの重みが高い順で枝切り
+              prune_size = 10
+              pruned_articles = []
+              biddings = articles
+                .map{|article| MachineChair::Models::Bidding.new(candidate, article)}
+                .map{|bidding| state.find_bidding(bidding)}
+              (1..5).each do |rank|
+                pruned_articles.concat biddings.select{|b| b.rank == rank}.map{|b| b.article}
+                break if pruned_articles.size >= prune_size
+              end
+              articles = pruned_articles
 
-              # 動作確認用
-              break if is_test
+              articles.combination(slot - 1).map{ |_group|
+                group = [seed] + _group
+                next if is_satisfy_constraints(group)
+                score = state.calc_group_score(candidate, group, b: bidding, d: feedback)
+                groups << MachineChair::Models::SessionGroup.new(candidate, group, score: score, seed: seed)
+
+                # 動作確認用
+                break if is_test
+              }
             }
           }
-        }
+        end
         best_group = groups.max_by{|group| group.group_score(param)}
 
         if best_group
@@ -63,8 +68,10 @@ module MachineChair
           state.update(best_group)
           session.append best_group
         else
-          state.remove_articles([seed])
-          session.remained_articles << seed
+          state.remove_articles(seeds)
+          seeds.each do |seed|
+            session.remained_articles << seed
+          end
         end
       end
       session

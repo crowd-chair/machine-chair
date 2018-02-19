@@ -83,19 +83,19 @@ module MachineChair
 
         {
           tag: tag,
-          articles: articles.map{ |article|
-            {
-              id: article.id,
-              name: article.name,
-              # keywords: article.keywords.map{|keyword| keyword.id}
-            }
-          },
-          session_names: session_names.map { |session_name|
-            {
-              id: session_name.id,
-              name: session_name.name
-            }
-          },
+          # articles: articles.map{ |article|
+          #   {
+          #     id: article.id,
+          #     name: article.name,
+          #     # keywords: article.keywords.map{|keyword| keyword.id}
+          #   }
+          # },
+          # session_names: session_names.map { |session_name|
+          #   {
+          #     id: session_name.id,
+          #     name: session_name.name
+          #   }
+          # },
           # keywords: keywords.map{|keyword|
           #   {
           #     id: keyword.id,
